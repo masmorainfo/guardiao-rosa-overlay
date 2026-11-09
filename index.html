@@ -117,6 +117,7 @@
     const debugMode = params.get("debug") === "1" || testMode;
     const testTools = document.getElementById("test-tools");
     let lastId = null;
+    let lastQueueSignature = "";
     let socket = null;
     let reconnectTimer = null;
     const recentEvents = [];
@@ -196,6 +197,9 @@
     }
 
     function renderQueue(nextAlerts) {
+      const signature = JSON.stringify(nextAlerts.map((item) => [item.senderId, item.senderName, item.count, item.resumesAfterPriority]));
+      if (signature === lastQueueSignature) return;
+      lastQueueSignature = signature;
       queueList.replaceChildren();
       for (const [index, item] of nextAlerts.entries()) {
         const row = document.createElement("li");
