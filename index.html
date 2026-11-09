@@ -12,11 +12,20 @@
     body { display: block; }
     #alert { width: min(84vw, 540px); min-height: 140px; padding: 22px 66px; position: fixed; right: var(--alert-right); bottom: calc(var(--stack-bottom) + var(--queue-space) + 12px); overflow: hidden; border: 2px solid rgba(164, 255, 184, .96); border-radius: 28px; color: #f2fff1; background: linear-gradient(112deg, rgba(4, 34, 22, .97), rgba(8, 92, 53, .95) 52%, rgba(25, 111, 63, .94)); box-shadow: 0 0 42px rgba(48, 255, 120, .48), 0 0 10px rgba(191, 255, 192, .5), inset 0 0 30px rgba(151, 255, 174, .17); text-align: center; opacity: 0; transform: translateX(115%) rotate(4deg); transition: opacity .24s ease, transform .24s cubic-bezier(.2, .8, .25, 1); }
     #alert.visible { opacity: 1; animation: enter-wave .72s cubic-bezier(.18, .82, .2, 1) both, gentle-wave 2s ease-in-out .72s 1; }
+    #alert.likes { border-color: rgba(255, 220, 139, .98); color: #fff7e4; background: linear-gradient(112deg, rgba(48, 30, 6, .97), rgba(133, 84, 12, .96) 52%, rgba(179, 126, 28, .95)); box-shadow: 0 0 42px rgba(255, 184, 54, .48), 0 0 12px rgba(255, 226, 160, .58), inset 0 0 30px rgba(255, 220, 139, .18); }
+    #alert.likes .kicker { color: #ffe1a2; }
+    #alert.likes .message { color: #fff0c8; }
+    #alert.likes .leaf { filter: drop-shadow(0 0 8px rgba(255, 211, 112, .76)); }
     #alert::before, #alert::after { content: ""; position: absolute; width: 130px; height: 130px; border: 1px solid rgba(158, 255, 174, .25); border-radius: 50%; }
     #alert::before { top: -75px; left: -44px; }
     #alert::after { bottom: -94px; right: -33px; }
     .kicker { margin: 0 0 8px; color: #a7f3b5; font-size: 15px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
     .name { margin: 0; font-size: clamp(24px, 4vw, 38px); font-weight: 800; line-height: 1.12; text-shadow: 0 2px 10px rgba(0, 0, 0, .55); }
+    .identity { display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 0; }
+    #gift-icon { width: 40px; height: 40px; flex: 0 0 40px; object-fit: contain; filter: drop-shadow(0 0 9px rgba(196, 255, 179, .7)); }
+    #gift-fallback { flex: 0 0 auto; font-size: 34px; line-height: 1; filter: drop-shadow(0 0 8px rgba(196, 255, 179, .7)); }
+    #gift-icon[hidden], #gift-fallback[hidden] { display: none; }
+    #alert.likes #gift-fallback { filter: drop-shadow(0 0 10px rgba(255, 218, 126, .9)); }
     .message { margin: 8px 0 0; color: #e0ffd9; font-size: clamp(18px, 2.8vw, 26px); font-weight: 650; }
     .leaf { position: absolute; top: 50%; transform: translateY(-50%); font-size: 40px; filter: drop-shadow(0 0 8px rgba(161, 255, 156, .6)); }
     .leaf.left { left: 13px; animation: leaf-wave 2.4s ease-in-out infinite; }
@@ -77,8 +86,12 @@
     <span class="glint one" aria-hidden="true">✦</span>
     <span class="glint two" aria-hidden="true">✧</span>
     <span class="sheen" aria-hidden="true"></span>
-    <p class="kicker">A floresta agradece</p>
-    <p class="name" id="name"></p>
+    <p class="kicker" id="kicker">A floresta agradece</p>
+    <div class="identity">
+      <img id="gift-icon" alt="" hidden>
+      <span id="gift-fallback" aria-hidden="true">🌿</span>
+      <p class="name" id="name"></p>
+    </div>
     <p class="message" id="message"></p>
   </section>
   <aside id="queue-panel" aria-live="polite" aria-label="Próximos cinco alertas">
@@ -91,6 +104,7 @@
     <button id="test-15">Testar 15 rosas</button>
     <button id="test-30">Testar 30 rosas</button>
     <button id="test-round-robin">Testar fila alternada</button>
+    <button id="test-likes">Testar 1.000 curtidas</button>
     <button id="test-priority">Testar pausa de 10 s</button>
     <button id="test-reset">Reiniciar</button>
   </aside>
@@ -100,6 +114,7 @@
     const settings = {
       blockSize: 15,
       lowDiamondValue: 1,
+      likeGoal: 1_000,
       highPriorityMinDiamonds: 100,
       highPriorityPauseMs: 10_000,
       alertDurationMs: 3_000,
@@ -109,6 +124,9 @@
     const card = document.getElementById("alert");
     const name = document.getElementById("name");
     const message = document.getElementById("message");
+    const kicker = document.getElementById("kicker");
+    const giftIcon = document.getElementById("gift-icon");
+    const giftFallback = document.getElementById("gift-fallback");
     const queuePanel = document.getElementById("queue-panel");
     const queueList = document.getElementById("queue-list");
     const status = document.getElementById("status");
@@ -138,6 +156,7 @@
         if (result.kind === "low-value") summary += ` | acumulado ${result.accumulated} | blocos +${result.blocksAdded}`;
         if (result.kind === "high-priority") summary += ` | pausa prioritária`;
       }
+      if (eventName === "like" && result.kind === "like-progress") summary += ` → +${result.added} curtidas | total ${result.total} | metas +${result.alertsAdded}`;
       const snapshot = controller.snapshot();
       summary += ` | fila ${snapshot.pendingBlocks}`;
       if (snapshot.current) summary += ` | exibindo ${snapshot.current.senderName}`;
@@ -146,15 +165,22 @@
       setStatus(testMode ? "Teste local ativo — Event API não utilizada." : "TikFinity conectado.");
     }
 
-    function simulateGift(senderId, senderName, repeatCount, diamondCount = 1) {
+    function simulateGift(senderId, senderName, repeatCount, diamondCount = 1, giftName = "Rosa") {
       const envelope = {
         event: "gift",
         data: {
-          gift: { id: "test-rose", name: "Rosa", diamondCount, type: 0 },
+          gift: { id: `test-${giftName}`, name: giftName, diamondCount, type: 0 },
           repeatCount,
           user: { uniqueId: senderId, nickname: senderName },
         },
       };
+      const result = controller.handleEnvelope(envelope);
+      describeEvent(envelope, result);
+      render();
+    }
+
+    function simulateLikes(likeCount) {
+      const envelope = { event: "like", data: { likeCount, user: { uniqueId: "tap-teste", nickname: "Pessoa Tap Tap" } } };
       const result = controller.handleEnvelope(envelope);
       describeEvent(envelope, result);
       render();
@@ -213,7 +239,7 @@
         if (item.resumesAfterPriority) donor.textContent += " (retoma)";
         const count = document.createElement("span");
         count.className = "queue-count";
-        count.textContent = `${item.count} rosas`;
+        count.textContent = item.queueLabel;
         row.append(number, donor, count);
         queueList.append(row);
       }
@@ -226,13 +252,30 @@
       renderQueue(snapshot.nextAlerts);
       if (!current) {
         card.classList.remove("visible");
+        card.classList.remove("likes");
         lastId = null;
         return;
       }
       if (current.id !== lastId) {
         lastId = current.id;
+        const isLikes = current.mode === "likes";
+        card.classList.toggle("likes", isLikes);
+        kicker.textContent = "A floresta agradece";
         name.textContent = current.senderName;
         message.textContent = current.text;
+        if (current.giftIconUrl && !isLikes) {
+          giftIcon.src = current.giftIconUrl;
+          giftIcon.alt = current.giftName || "Presente";
+          giftIcon.hidden = false;
+          giftFallback.hidden = true;
+        } else {
+          giftIcon.removeAttribute("src");
+          giftIcon.hidden = true;
+          giftFallback.textContent = isLikes ? "💛" : (current.fallbackEmoji || "🎁");
+          giftFallback.hidden = false;
+        }
+        card.classList.remove("visible");
+        void card.offsetWidth;
         card.classList.add("visible");
       }
     }
@@ -248,6 +291,7 @@
         simulateGift("ana-teste", "Ana (teste)", 30);
         simulateGift("joao-teste", "João (teste)", 15);
       });
+      document.getElementById("test-likes").addEventListener("click", () => simulateLikes(1_000));
       document.getElementById("test-priority").addEventListener("click", () => simulateGift("prioridade-teste", "Presente prioritário (teste)", 1, 100));
       document.getElementById("test-reset").addEventListener("click", () => window.location.reload());
       setInterval(render, 100);
