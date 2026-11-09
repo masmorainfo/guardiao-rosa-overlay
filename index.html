@@ -104,17 +104,17 @@
     <button id="test-15">Testar 15 rosas</button>
     <button id="test-30">Testar 30 rosas</button>
     <button id="test-round-robin">Testar fila alternada</button>
-    <button id="test-likes">Testar 100 curtidas</button>
+    <button id="test-likes">Testar 1.000 curtidas</button>
     <button id="test-priority">Testar pausa de 10 s</button>
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=10";
+    import { RoseQueueController } from "./core.mjs?v=11";
 
     const settings = {
       blockSize: 15,
       lowDiamondValue: 1,
-      likeGoal: 100,
+      likeGoal: 1_000,
       highPriorityMinDiamonds: 100,
       highPriorityPauseMs: 10_000,
       alertDurationMs: 3_000,
@@ -291,7 +291,7 @@
         simulateGift("ana-teste", "Ana (teste)", 30);
         simulateGift("joao-teste", "João (teste)", 15);
       });
-      document.getElementById("test-likes").addEventListener("click", () => simulateLikes(100));
+      document.getElementById("test-likes").addEventListener("click", () => simulateLikes(1_000));
       document.getElementById("test-priority").addEventListener("click", () => simulateGift("prioridade-teste", "Presente prioritário (teste)", 1, 100));
       document.getElementById("test-reset").addEventListener("click", () => window.location.reload());
       setInterval(render, 100);
