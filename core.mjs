@@ -1,7 +1,7 @@
 export const DEFAULT_SETTINGS = Object.freeze({
   blockSize: 15,
   lowDiamondValue: 1,
-  likeGoal: 1_000,
+  likeGoal: 100,
   highPriorityMinDiamonds: 100,
   highPriorityPauseMs: 10_000,
   alertDurationMs: 3_000,
