@@ -137,7 +137,11 @@ export class RoseQueueController {
         existing.senderName = normalized.senderName;
       } else {
         this.pendingByDonor.set(normalized.senderId, { blocks, senderName: normalized.senderName });
-        this.roundRobin.push(normalized.senderId);
+        const currentDonorIndex = this.current
+          ? this.roundRobin.indexOf(this.current.senderId)
+          : -1;
+        if (currentDonorIndex >= 0) this.roundRobin.splice(currentDonorIndex, 0, normalized.senderId);
+        else this.roundRobin.push(normalized.senderId);
       }
     }
 
