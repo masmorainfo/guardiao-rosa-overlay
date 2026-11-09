@@ -9,9 +9,9 @@
     :root { font-family: "Segoe UI", Arial, sans-serif; }
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent !important; }
-    body { display: grid; place-items: center; }
-    #alert { width: min(92vw, 760px); min-height: 136px; padding: 20px 70px; position: relative; overflow: hidden; border: 2px solid rgba(148, 255, 174, .88); border-radius: 26px; color: #f2fff1; background: linear-gradient(110deg, rgba(5, 38, 25, .94), rgba(10, 87, 54, .92) 54%, rgba(25, 103, 61, .9)); box-shadow: 0 0 28px rgba(48, 255, 120, .34), inset 0 0 26px rgba(124, 255, 157, .1); text-align: center; opacity: 0; transform: translateY(18px) scale(.96); transition: opacity .22s ease, transform .22s ease; }
-    #alert.visible { opacity: 1; transform: translateY(0) scale(1); }
+    body { display: block; }
+    #alert { width: min(84vw, 540px); min-height: 140px; padding: 22px 66px; position: fixed; right: clamp(12px, 3vw, 40px); bottom: clamp(112px, 17vh, 190px); overflow: hidden; border: 2px solid rgba(164, 255, 184, .96); border-radius: 28px; color: #f2fff1; background: linear-gradient(112deg, rgba(4, 34, 22, .97), rgba(8, 92, 53, .95) 52%, rgba(25, 111, 63, .94)); box-shadow: 0 0 42px rgba(48, 255, 120, .48), 0 0 10px rgba(191, 255, 192, .5), inset 0 0 30px rgba(151, 255, 174, .17); text-align: center; opacity: 0; transform: translateX(115%) rotate(4deg); transition: opacity .24s ease, transform .24s cubic-bezier(.2, .8, .25, 1); }
+    #alert.visible { opacity: 1; animation: enter-wave .72s cubic-bezier(.18, .82, .2, 1) both, gentle-wave 2s ease-in-out .72s 1; }
     #alert::before, #alert::after { content: ""; position: absolute; width: 130px; height: 130px; border: 1px solid rgba(158, 255, 174, .25); border-radius: 50%; }
     #alert::before { top: -75px; left: -44px; }
     #alert::after { bottom: -94px; right: -33px; }
@@ -19,8 +19,41 @@
     .name { margin: 0; font-size: clamp(24px, 4vw, 38px); font-weight: 800; line-height: 1.12; text-shadow: 0 2px 10px rgba(0, 0, 0, .55); }
     .message { margin: 8px 0 0; color: #e0ffd9; font-size: clamp(18px, 2.8vw, 26px); font-weight: 650; }
     .leaf { position: absolute; top: 50%; transform: translateY(-50%); font-size: 40px; filter: drop-shadow(0 0 8px rgba(161, 255, 156, .6)); }
-    .leaf.left { left: 13px; }
-    .leaf.right { right: 13px; }
+    .leaf.left { left: 13px; animation: leaf-wave 2.4s ease-in-out infinite; }
+    .leaf.right { right: 13px; animation: leaf-wave 2.4s ease-in-out .35s infinite reverse; }
+    .glint { position: absolute; color: #e1ff9d; opacity: 0; font-size: 18px; text-shadow: 0 0 12px #a4ffaf; pointer-events: none; animation: glint 1.8s ease-in-out .45s 1 both; }
+    .glint.one { top: 15px; left: 28%; }
+    .glint.two { right: 24%; bottom: 18px; animation-delay: .75s; }
+    .sheen { position: absolute; top: -20%; left: -40%; width: 28%; height: 140%; transform: skewX(-18deg); background: linear-gradient(90deg, transparent, rgba(226, 255, 219, .34), transparent); pointer-events: none; animation: sheen-sweep 1.35s ease-out .38s 1 both; }
+    @keyframes enter-wave {
+      0% { opacity: 0; transform: translateX(115%) rotate(5deg); }
+      58% { opacity: 1; transform: translateX(-5%) translateY(-7px) rotate(-2deg); }
+      76% { transform: translateX(2.5%) translateY(3px) rotate(1.2deg); }
+      90% { transform: translateX(-1%) translateY(-1px) rotate(-.4deg); }
+      100% { opacity: 1; transform: translateX(0) translateY(0) rotate(0); }
+    }
+    @keyframes gentle-wave {
+      0%, 100% { transform: translateX(0) translateY(0) rotate(0); }
+      28% { transform: translateX(-2px) translateY(-4px) rotate(-.35deg); }
+      62% { transform: translateX(1px) translateY(2px) rotate(.25deg); }
+    }
+    @keyframes leaf-wave {
+      0%, 100% { translate: 0 0; rotate: 0deg; }
+      50% { translate: 0 -5px; rotate: -7deg; }
+    }
+    @keyframes glint {
+      0%, 100% { opacity: 0; scale: .45; }
+      45% { opacity: .95; scale: 1.15; }
+    }
+    @keyframes sheen-sweep {
+      0% { left: -40%; opacity: 0; }
+      18% { opacity: 1; }
+      100% { left: 125%; opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #alert.visible, .leaf, .glint, .sheen { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+      #alert { transition-duration: .01ms; }
+    }
     #status { display: none; position: fixed; z-index: 10; left: 8px; top: 8px; max-width: min(92vw, 520px); padding: 8px 10px; border-radius: 8px; color: #fff; background: rgba(15, 20, 18, .92); font: 12px/1.45 "Segoe UI", Arial, sans-serif; white-space: pre-line; }
     #status.visible { display: block; }
     #test-tools { display: none; position: fixed; z-index: 11; left: 8px; bottom: 8px; width: min(94vw, 330px); padding: 10px; border: 1px solid #8fffb0; border-radius: 10px; color: #fff; background: rgba(15, 32, 23, .96); font: 13px/1.4 "Segoe UI", Arial, sans-serif; }
@@ -33,6 +66,9 @@
   <section id="alert" aria-live="polite" aria-atomic="true">
     <span class="leaf left" aria-hidden="true">🌿</span>
     <span class="leaf right" aria-hidden="true">🍃</span>
+    <span class="glint one" aria-hidden="true">✦</span>
+    <span class="glint two" aria-hidden="true">✧</span>
+    <span class="sheen" aria-hidden="true"></span>
     <p class="kicker">A floresta agradece</p>
     <p class="name" id="name"></p>
     <p class="message" id="message"></p>
