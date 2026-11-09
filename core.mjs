@@ -4,7 +4,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   highPriorityMinDiamonds: 100,
   highPriorityPauseMs: 10_000,
   alertDurationMs: 3_000,
-  alertGapMs: 2_000,
+  alertGapMs: 4_000,
 });
 
 const asPositiveInteger = (value, fallback) => {
