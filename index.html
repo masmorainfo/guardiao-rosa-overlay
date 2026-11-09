@@ -6,11 +6,11 @@
   <meta name="color-scheme" content="light">
   <title>Guardião da Floresta — presentes</title>
   <style>
-    :root { font-family: "Segoe UI", Arial, sans-serif; }
+    :root { font-family: "Segoe UI", Arial, sans-serif; --alert-right: clamp(12px, 3vw, 40px); --stack-bottom: clamp(16px, 3vh, 32px); --queue-space: clamp(164px, 21vh, 200px); }
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent !important; }
     body { display: block; }
-    #alert { width: min(84vw, 540px); min-height: 140px; padding: 22px 66px; position: fixed; right: clamp(12px, 3vw, 40px); bottom: clamp(112px, 17vh, 190px); overflow: hidden; border: 2px solid rgba(164, 255, 184, .96); border-radius: 28px; color: #f2fff1; background: linear-gradient(112deg, rgba(4, 34, 22, .97), rgba(8, 92, 53, .95) 52%, rgba(25, 111, 63, .94)); box-shadow: 0 0 42px rgba(48, 255, 120, .48), 0 0 10px rgba(191, 255, 192, .5), inset 0 0 30px rgba(151, 255, 174, .17); text-align: center; opacity: 0; transform: translateX(115%) rotate(4deg); transition: opacity .24s ease, transform .24s cubic-bezier(.2, .8, .25, 1); }
+    #alert { width: min(84vw, 540px); min-height: 140px; padding: 22px 66px; position: fixed; right: var(--alert-right); bottom: calc(var(--stack-bottom) + var(--queue-space) + 12px); overflow: hidden; border: 2px solid rgba(164, 255, 184, .96); border-radius: 28px; color: #f2fff1; background: linear-gradient(112deg, rgba(4, 34, 22, .97), rgba(8, 92, 53, .95) 52%, rgba(25, 111, 63, .94)); box-shadow: 0 0 42px rgba(48, 255, 120, .48), 0 0 10px rgba(191, 255, 192, .5), inset 0 0 30px rgba(151, 255, 174, .17); text-align: center; opacity: 0; transform: translateX(115%) rotate(4deg); transition: opacity .24s ease, transform .24s cubic-bezier(.2, .8, .25, 1); }
     #alert.visible { opacity: 1; animation: enter-wave .72s cubic-bezier(.18, .82, .2, 1) both, gentle-wave 2s ease-in-out .72s 1; }
     #alert::before, #alert::after { content: ""; position: absolute; width: 130px; height: 130px; border: 1px solid rgba(158, 255, 174, .25); border-radius: 50%; }
     #alert::before { top: -75px; left: -44px; }
@@ -54,6 +54,14 @@
       #alert.visible, .leaf, .glint, .sheen { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
       #alert { transition-duration: .01ms; }
     }
+    #queue-panel { position: fixed; z-index: 8; right: var(--alert-right); bottom: var(--stack-bottom); width: min(84vw, 540px); max-height: var(--queue-space); padding: 10px 12px; overflow: hidden; border: 1px solid rgba(143, 255, 176, .76); border-radius: 16px; color: #effff1; background: linear-gradient(110deg, rgba(3, 28, 19, .93), rgba(6, 67, 42, .92)); box-shadow: 0 0 22px rgba(48, 255, 120, .2), inset 0 0 18px rgba(124, 255, 157, .08); opacity: 0; visibility: hidden; transform: translateY(8px); transition: opacity .18s ease, transform .18s ease, visibility .18s; }
+    #queue-panel.visible { opacity: 1; visibility: visible; transform: translateY(0); }
+    #queue-title { margin: 0 0 6px; color: #a7f3b5; font-size: 11px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+    #queue-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+    #queue-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 22px; padding: 2px 6px; border-radius: 7px; background: rgba(184, 255, 194, .08); font-size: 13px; }
+    .queue-number { color: #b7ff92; font-size: 11px; font-weight: 800; }
+    .queue-name { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-count { color: #c7fbd0; font-size: 11px; white-space: nowrap; }
     #status { display: none; position: fixed; z-index: 10; left: 8px; top: 8px; max-width: min(92vw, 520px); padding: 8px 10px; border-radius: 8px; color: #fff; background: rgba(15, 20, 18, .92); font: 12px/1.45 "Segoe UI", Arial, sans-serif; white-space: pre-line; }
     #status.visible { display: block; }
     #test-tools { display: none; position: fixed; z-index: 11; left: 8px; bottom: 8px; width: min(94vw, 330px); padding: 10px; border: 1px solid #8fffb0; border-radius: 10px; color: #fff; background: rgba(15, 32, 23, .96); font: 13px/1.4 "Segoe UI", Arial, sans-serif; }
@@ -73,6 +81,10 @@
     <p class="name" id="name"></p>
     <p class="message" id="message"></p>
   </section>
+  <aside id="queue-panel" aria-live="polite" aria-label="Próximos cinco alertas">
+    <p id="queue-title">Próximos alertas</p>
+    <ol id="queue-list"></ol>
+  </aside>
   <div id="status" role="status"></div>
   <aside id="test-tools" aria-label="Controles de teste">
     <p>Teste local — não envia presentes reais</p>
@@ -96,6 +108,8 @@
     const card = document.getElementById("alert");
     const name = document.getElementById("name");
     const message = document.getElementById("message");
+    const queuePanel = document.getElementById("queue-panel");
+    const queueList = document.getElementById("queue-list");
     const status = document.getElementById("status");
     const params = new URLSearchParams(window.location.search);
     const previewMode = params.get("preview") === "1";
@@ -181,8 +195,30 @@
       }, 3_000);
     }
 
+    function renderQueue(nextAlerts) {
+      queueList.replaceChildren();
+      for (const [index, item] of nextAlerts.entries()) {
+        const row = document.createElement("li");
+        const number = document.createElement("span");
+        number.className = "queue-number";
+        number.textContent = String(index + 1).padStart(2, "0");
+        const donor = document.createElement("span");
+        donor.className = "queue-name";
+        donor.textContent = item.senderName;
+        if (item.resumesAfterPriority) donor.textContent += " (retoma)";
+        const count = document.createElement("span");
+        count.className = "queue-count";
+        count.textContent = `${item.count} rosas`;
+        row.append(number, donor, count);
+        queueList.append(row);
+      }
+      queuePanel.classList.toggle("visible", nextAlerts.length > 0);
+    }
+
     function render() {
-      const current = controller.snapshot().current;
+      const snapshot = controller.snapshot();
+      const current = snapshot.current;
+      renderQueue(snapshot.nextAlerts);
       if (!current) {
         card.classList.remove("visible");
         lastId = null;
