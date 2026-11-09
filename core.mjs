@@ -4,6 +4,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   highPriorityMinDiamonds: 100,
   highPriorityPauseMs: 10_000,
   alertDurationMs: 3_000,
+  alertGapMs: 2_000,
 });
 
 const asPositiveInteger = (value, fallback) => {
@@ -96,6 +97,7 @@ export class RoseQueueController {
     this.settings.highPriorityMinDiamonds = asPositiveInteger(this.settings.highPriorityMinDiamonds, DEFAULT_SETTINGS.highPriorityMinDiamonds);
     this.settings.highPriorityPauseMs = asPositiveInteger(this.settings.highPriorityPauseMs, DEFAULT_SETTINGS.highPriorityPauseMs);
     this.settings.alertDurationMs = asPositiveInteger(this.settings.alertDurationMs, DEFAULT_SETTINGS.alertDurationMs);
+    this.settings.alertGapMs = asPositiveInteger(this.settings.alertGapMs, DEFAULT_SETTINGS.alertGapMs);
     this.clock = clock;
     this.carryByDonor = new Map();
     this.pendingByDonor = new Map();
@@ -103,6 +105,7 @@ export class RoseQueueController {
     this.current = null;
     this.nextAlertId = 1;
     this.pausedUntil = 0;
+    this.nextAlertAt = 0;
     this.lastResult = null;
   }
 
@@ -152,6 +155,7 @@ export class RoseQueueController {
 
   pause(at = this.clock()) {
     this.pausedUntil = Math.max(this.pausedUntil, at + this.settings.highPriorityPauseMs);
+    this.nextAlertAt = Math.max(this.nextAlertAt, this.pausedUntil + this.settings.alertGapMs);
     if (this.current?.visible) {
       this.current.remainingMs = Math.max(0, this.current.displayUntil - at);
       this.current.visible = false;
@@ -169,7 +173,12 @@ export class RoseQueueController {
     }
 
     if (this.current && at < this.current.displayUntil) return;
-    this.current = null;
+    if (this.current) {
+      const alertEndedAt = this.current.displayUntil;
+      this.current = null;
+      this.nextAlertAt = Math.max(this.nextAlertAt, alertEndedAt + this.settings.alertGapMs);
+    }
+    if (at < this.nextAlertAt) return;
 
     while (this.roundRobin.length > 0) {
       const senderId = this.roundRobin.shift();
