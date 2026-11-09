@@ -26,6 +26,11 @@ function firstHttpsImageUrl(...values) {
               ...(Array.isArray(value.urlList) ? value.urlList : []),
               ...(Array.isArray(value.url_list) ? value.url_list : []),
               value.url,
+          value.imageUrl,
+          value.image_url,
+          value.giftImage,
+          value.gift_image,
+          value.src,
             ]
           : [];
     const url = candidates.find((item) => typeof item === "string" && /^https:\/\//i.test(item));
@@ -52,22 +57,38 @@ export function normalizeGift(envelope) {
 
   const data = envelope.data;
   const extended = data.extendedGiftInfo ?? data.extendedGift ?? {};
+  const details = data.giftDetails ?? data.gift_details ?? {};
   const gift = data.gift ?? {};
   const giftExtended = gift.extendedGiftInfo ?? gift.extendedGift ?? {};
+  const giftDetails = gift.giftDetails ?? gift.gift_details ?? {};
   const giftInfo = gift.info ?? {};
   const user = data.user ?? {};
 
   const giftId = firstDefined(data.giftId, gift.id, gift.giftId, extended.giftId, "unknown-gift");
-  const giftName = String(firstDefined(gift.name, data.giftName, data.gift_name, extended.name, extended.giftName, giftExtended.name, "presente"));
+  const giftName = String(firstDefined(gift.name, data.giftName, data.gift_name, details.name, details.giftName, details.gift_name, extended.name, extended.giftName, giftExtended.name, giftDetails.name, giftDetails.giftName, "presente"));
   const giftIconUrl = firstHttpsImageUrl(
     gift.image,
     gift.icon,
+    gift.giftImage,
+    gift.gift_image,
+    gift.imageUrl,
+    gift.image_url,
+    details.giftImage,
+    details.gift_image,
+    details.image,
+    details.icon,
     extended.image,
     extended.icon,
     giftExtended.image,
     giftExtended.icon,
+    giftDetails.giftImage,
+    giftDetails.gift_image,
+    giftDetails.image,
+    giftDetails.icon,
     data.giftImage,
     data.gift_image,
+    data.imageUrl,
+    data.image_url,
     data.giftPictureUrl,
   );
   const diamondValue = Number(firstDefined(
@@ -247,9 +268,9 @@ export class RoseQueueController {
     const alertsAdded = milestonesAfter - milestonesBefore;
 
     for (let i = 0; i < alertsAdded; i += 1) {
-      this.enqueueAlert("__community__", {
+      this.enqueueAlert(normalized.senderId || `__like-${this.nextAlertId}`, {
         mode: "likes",
-        senderName: "a comunidade",
+        senderName: normalized.senderName || "quem curtiu",
         count: this.settings.likeGoal,
         text: `Meta de ${this.settings.likeGoal.toLocaleString("pt-BR")} curtidas alcançada`,
         queueLabel: `${this.settings.likeGoal.toLocaleString("pt-BR")} curtidas`,
