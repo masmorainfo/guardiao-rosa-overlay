@@ -21,7 +21,7 @@
     .leaf { position: absolute; top: 50%; transform: translateY(-50%); font-size: 40px; filter: drop-shadow(0 0 8px rgba(161, 255, 156, .6)); }
     .leaf.left { left: 13px; }
     .leaf.right { right: 13px; }
-    #status { display: none; position: fixed; left: 8px; top: 8px; padding: 6px 10px; border-radius: 8px; color: #fff; background: rgba(15, 20, 18, .9); font: 13px "Segoe UI", Arial, sans-serif; }
+    #status { display: none; position: fixed; z-index: 10; left: 8px; top: 8px; max-width: min(92vw, 520px); padding: 8px 10px; border-radius: 8px; color: #fff; background: rgba(15, 20, 18, .92); font: 12px/1.45 "Segoe UI", Arial, sans-serif; white-space: pre-line; }
     #status.visible { display: block; }
   </style>
 </head>
@@ -55,11 +55,29 @@
     let lastId = null;
     let socket = null;
     let reconnectTimer = null;
+    const recentEvents = [];
 
     function setStatus(text) {
       if (!debugMode) return;
-      status.textContent = text;
+      status.textContent = [text, ...recentEvents].join("\n");
       status.classList.add("visible");
+    }
+
+    function describeEvent(envelope, result) {
+      const eventName = String(envelope?.event ?? "desconhecido");
+      let summary = `Evento: ${eventName}`;
+      if (eventName === "gift") {
+        summary += ` → ${result.kind}`;
+        if (result.reason) summary += ` (${result.reason})`;
+        if (result.kind === "low-value") summary += ` | acumulado ${result.accumulated} | blocos +${result.blocksAdded}`;
+        if (result.kind === "high-priority") summary += ` | pausa prioritária`;
+      }
+      const snapshot = controller.snapshot();
+      summary += ` | fila ${snapshot.pendingBlocks}`;
+      if (snapshot.current) summary += ` | exibindo ${snapshot.current.senderName}`;
+      recentEvents.unshift(summary);
+      recentEvents.length = Math.min(recentEvents.length, 5);
+      setStatus("TikFinity conectado.");
     }
 
     function connect() {
@@ -75,9 +93,13 @@
       socket.addEventListener("open", () => setStatus("TikFinity conectado."));
       socket.addEventListener("message", ({ data }) => {
         try {
-          controller.handleEnvelope(JSON.parse(String(data)));
+          const envelope = JSON.parse(String(data));
+          const result = controller.handleEnvelope(envelope);
+          describeEvent(envelope, result);
         } catch {
-          setStatus("Mensagem recebida inválida; aguardando próximo evento.");
+          recentEvents.unshift("Mensagem recebida inválida; aguardando próximo evento.");
+          recentEvents.length = Math.min(recentEvents.length, 5);
+          setStatus("TikFinity conectado.");
         }
       });
       socket.addEventListener("error", () => setStatus("Falha no WebSocket. Verifique a permissão de rede local."));
