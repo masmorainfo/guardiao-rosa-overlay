@@ -198,12 +198,44 @@ export class RoseQueueController {
     this.advance(at);
     let pendingBlocks = 0;
     for (const donor of this.pendingByDonor.values()) pendingBlocks += donor.blocks;
+    const nextAlerts = [];
+    if (this.current && !this.current.visible) {
+      nextAlerts.push({
+        senderId: this.current.senderId,
+        senderName: this.current.senderName,
+        count: this.current.count,
+        resumesAfterPriority: true,
+      });
+    }
+    const donorIds = [...this.roundRobin];
+    const blocksByDonor = new Map(
+      [...this.pendingByDonor].map(([senderId, donor]) => [senderId, donor.blocks]),
+    );
+    while (donorIds.length > 0 && nextAlerts.length < 5) {
+      const senderId = donorIds.shift();
+      const donor = this.pendingByDonor.get(senderId);
+      const blocks = blocksByDonor.get(senderId) ?? 0;
+      if (!donor || blocks <= 0) continue;
+      nextAlerts.push({
+        senderId,
+        senderName: donor.senderName,
+        count: this.settings.blockSize,
+        resumesAfterPriority: false,
+      });
+      if (blocks > 1) {
+        blocksByDonor.set(senderId, blocks - 1);
+        donorIds.push(senderId);
+      } else {
+        blocksByDonor.delete(senderId);
+      }
+    }
     return {
       connected: false,
       paused: at < this.pausedUntil,
       current: this.current?.visible ? { ...this.current } : null,
       pendingBlocks,
       donorsWaiting: this.pendingByDonor.size,
+      nextAlerts,
       lastResult: this.lastResult,
     };
   }
