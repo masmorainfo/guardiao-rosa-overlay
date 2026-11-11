@@ -2,9 +2,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   blockSize: 15,
   likeGoal: 1_000,
   highPriorityMinDiamonds: 100,
-  highPriorityPauseMs: 10_000,
   alertDurationMs: 3_000,
   alertGapMs: 4_000,
+  priorityGifts: [],
 });
 
 const asPositiveInteger = (value, fallback) => {
@@ -13,6 +13,15 @@ const asPositiveInteger = (value, fallback) => {
 };
 
 const firstDefined = (...values) => values.find((value) => value !== undefined && value !== null && value !== "");
+
+function normalizedGiftName(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
 
 function firstHttpsImageUrl(...values) {
   for (const value of values) {
@@ -182,9 +191,9 @@ export class RoseQueueController {
     this.settings.blockSize = asPositiveInteger(this.settings.blockSize, DEFAULT_SETTINGS.blockSize);
     this.settings.likeGoal = asPositiveInteger(this.settings.likeGoal, DEFAULT_SETTINGS.likeGoal);
     this.settings.highPriorityMinDiamonds = asPositiveInteger(this.settings.highPriorityMinDiamonds, DEFAULT_SETTINGS.highPriorityMinDiamonds);
-    this.settings.highPriorityPauseMs = asPositiveInteger(this.settings.highPriorityPauseMs, DEFAULT_SETTINGS.highPriorityPauseMs);
     this.settings.alertDurationMs = asPositiveInteger(this.settings.alertDurationMs, DEFAULT_SETTINGS.alertDurationMs);
     this.settings.alertGapMs = asPositiveInteger(this.settings.alertGapMs, DEFAULT_SETTINGS.alertGapMs);
+    this.settings.priorityGifts = Array.isArray(this.settings.priorityGifts) ? this.settings.priorityGifts : [];
     this.clock = clock;
     this.carryByDonor = new Map();
     this.lastLikeTotals = new Map();
@@ -192,14 +201,20 @@ export class RoseQueueController {
     this.pendingByDonor = new Map();
     this.roundRobin = [];
     this.current = null;
+    this.priorityQueue = [];
+    this.priorityLocks = new Map();
+    this.currentPriority = null;
     this.nextAlertId = 1;
-    this.pausedUntil = 0;
+    this.nextPriorityId = 1;
     this.nextAlertAt = 0;
     this.lastResult = null;
   }
 
   handleEnvelope(envelope, at = this.clock()) {
     if (envelope?.event === "like") return this.handleLikeEnvelope(envelope, at);
+    if (envelope?.event === "priorityEnd") {
+      return this.completePriority(envelope.data?.tokenId, at);
+    }
 
     const normalized = normalizeGift(envelope);
     if (normalized.kind !== "gift") {
@@ -207,9 +222,31 @@ export class RoseQueueController {
       return normalized;
     }
 
+    const profile = this.findPriorityProfile(normalized);
+    if (profile) {
+      const tokenId = globalThis.crypto?.randomUUID?.()
+        ? `gf-${globalThis.crypto.randomUUID()}`
+        : `gf-${at.toString(36)}-${this.nextPriorityId++}`;
+      const job = {
+        tokenId,
+        giftId: normalized.giftId,
+        giftName: normalized.giftName,
+        senderId: normalized.senderId,
+        senderName: normalized.senderName,
+        videoSrc: profile.videoSrc,
+        nativeDurationMs: asPositiveInteger(profile.nativeDurationMs, 0),
+        nativeReadyAt: at + asPositiveInteger(profile.nativeDurationMs, 0),
+        receivedAt: at,
+      };
+      this.priorityQueue.push(job);
+      this.priorityLocks.set(tokenId, job);
+      this.lastResult = { kind: "priority-queued", tokenId, giftName: normalized.giftName, senderName: normalized.senderName };
+      this.advance(at);
+      return this.lastResult;
+    }
+
     if (normalized.diamondValue >= this.settings.highPriorityMinDiamonds) {
-      this.pause(at);
-      this.lastResult = { kind: "high-priority", giftName: normalized.giftName, diamondValue: normalized.diamondValue };
+      this.lastResult = { kind: "unmapped-high-priority", giftName: normalized.giftName, diamondValue: normalized.diamondValue };
       return this.lastResult;
     }
 
@@ -242,6 +279,34 @@ export class RoseQueueController {
       accumulatedDiamonds: remainder,
       blocksAdded: blocks,
     };
+    this.advance(at);
+    return this.lastResult;
+  }
+
+  findPriorityProfile(gift) {
+    const giftName = normalizedGiftName(gift.giftName);
+    return this.settings.priorityGifts.find((profile) => {
+      const giftIds = (profile.giftIds ?? []).map(String);
+      if (giftIds.includes(String(gift.giftId))) return true;
+      return (profile.aliases ?? []).some((alias) => normalizedGiftName(alias) === giftName);
+    }) ?? null;
+  }
+
+  completePriority(tokenId, at = this.clock()) {
+    const key = String(tokenId ?? "");
+    const job = this.priorityLocks.get(key);
+    if (!job) {
+      this.lastResult = { kind: "priority-end-ignored", tokenId: key, reason: "unknown-token" };
+      return this.lastResult;
+    }
+
+    this.priorityLocks.delete(key);
+    this.priorityQueue = this.priorityQueue.filter((pending) => pending.tokenId !== key);
+    if (this.currentPriority?.tokenId === key) this.currentPriority = null;
+    if (this.priorityLocks.size === 0) {
+      this.nextAlertAt = Math.max(this.nextAlertAt, at + this.settings.alertGapMs);
+    }
+    this.lastResult = { kind: "priority-ended", tokenId: key, giftName: job.giftName };
     this.advance(at);
     return this.lastResult;
   }
@@ -302,31 +367,21 @@ export class RoseQueueController {
     else this.roundRobin.push(senderId);
   }
 
-  pause(at = this.clock()) {
-    this.pausedUntil = Math.max(this.pausedUntil, at + this.settings.highPriorityPauseMs);
-    this.nextAlertAt = Math.max(this.nextAlertAt, this.pausedUntil + this.settings.alertGapMs);
-    if (this.current?.visible) {
-      this.current.remainingMs = Math.max(0, this.current.displayUntil - at);
-      this.current.visible = false;
-      this.current.displayUntil = 0;
-    }
-  }
-
   advance(at = this.clock()) {
-    if (at < this.pausedUntil) return;
-
-    if (this.current && !this.current.visible) {
-      this.current.visible = true;
-      this.current.displayUntil = at + this.current.remainingMs;
-      return;
-    }
-
-    if (this.current && at < this.current.displayUntil) return;
-    if (this.current) {
+    if (this.current && at >= this.current.displayUntil) {
       const alertEndedAt = this.current.displayUntil;
       this.current = null;
       this.nextAlertAt = Math.max(this.nextAlertAt, alertEndedAt + this.settings.alertGapMs);
     }
+
+    if (this.current) return;
+
+    if (!this.currentPriority && this.priorityQueue.length > 0) {
+      const nextPriority = this.priorityQueue[0];
+      if (at >= nextPriority.nativeReadyAt) this.currentPriority = this.priorityQueue.shift();
+    }
+
+    if (this.priorityLocks.size > 0) return;
     if (at < this.nextAlertAt) return;
 
     while (this.roundRobin.length > 0) {
@@ -355,16 +410,6 @@ export class RoseQueueController {
     let pendingBlocks = 0;
     for (const donor of this.pendingByDonor.values()) pendingBlocks += donor.blocks.length;
     const nextAlerts = [];
-    if (this.current && !this.current.visible) {
-      nextAlerts.push({
-        senderId: this.current.senderId,
-        senderName: this.current.senderName,
-        count: this.current.count,
-        mode: this.current.mode,
-        queueLabel: this.current.queueLabel,
-        resumesAfterPriority: true,
-      });
-    }
     const donorIds = [...this.roundRobin];
     const blocksByDonor = new Map(
       [...this.pendingByDonor].map(([senderId, donor]) => [senderId, donor.blocks.length]),
@@ -385,7 +430,9 @@ export class RoseQueueController {
     }
     return {
       connected: false,
-      paused: at < this.pausedUntil,
+      paused: this.priorityLocks.size > 0,
+      priorityPending: this.priorityQueue.length,
+      priorityActive: this.currentPriority ? { ...this.currentPriority } : null,
       current: this.current?.visible ? { ...this.current } : null,
       pendingBlocks,
       donorsWaiting: this.pendingByDonor.size,
@@ -394,4 +441,3 @@ export class RoseQueueController {
     };
   }
 }
-

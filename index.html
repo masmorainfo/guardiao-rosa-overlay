@@ -16,6 +16,8 @@
     #alert.likes .kicker { color: #ffe1a2; }
     #alert.likes .message { color: #fff0c8; }
     #alert.likes .leaf { filter: drop-shadow(0 0 8px rgba(255, 211, 112, .76)); }
+    #priority-video { position: fixed; z-index: 7; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; pointer-events: none; background: transparent; }
+    #priority-video.visible { opacity: 1; }
     #alert::before, #alert::after { content: ""; position: absolute; width: 130px; height: 130px; border: 1px solid rgba(158, 255, 174, .25); border-radius: 50%; }
     #alert::before { top: -75px; left: -44px; }
     #alert::after { bottom: -94px; right: -33px; }
@@ -94,6 +96,7 @@
     </div>
     <p class="message" id="message"></p>
   </section>
+  <video id="priority-video" playsinline muted preload="none" aria-hidden="true"></video>
   <aside id="queue-panel" aria-live="polite" aria-label="Próximos cinco alertas">
     <p id="queue-title">Próximos alertas</p>
     <ol id="queue-list"></ol>
@@ -105,19 +108,30 @@
     <button id="test-30">Testar 30 rosas</button>
     <button id="test-round-robin">Testar fila alternada</button>
     <button id="test-likes">Testar 1.000 curtidas</button>
-    <button id="test-priority">Testar pausa de 10 s</button>
+    <button id="test-priority">Testar sequência prioritária</button>
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=21";
+    import { RoseQueueController } from "./core.mjs?v=22";
+
+    const PRIORITY_END_ACTION = "GUARDIAO - Priority End Relay";
+    const priorityGifts = [
+      { aliases: ["capivara", "capybara"], videoSrc: "./media/capivara.webm?v=22", nativeDurationMs: 4_000 },
+      { aliases: ["corgi"], videoSrc: "./media/corgi01.webm?v=22", nativeDurationMs: 4_000 },
+      { aliases: ["coroa", "crown"], videoSrc: "./media/coroa01.webm?v=22", nativeDurationMs: 4_000 },
+      { aliases: ["fenix real", "fenix", "phoenix"], videoSrc: "./media/fenix%20real.webm?v=22", nativeDurationMs: 9_000 },
+      { aliases: ["fogos de artificio", "fogos de artificios", "fireworks"], videoSrc: "./media/fogos%20de%20artificios01.webm?v=22", nativeDurationMs: 6_000 },
+      { aliases: ["galaxaia", "galaxia", "galaxy"], videoSrc: "./media/galaxaia01.webm?v=22", nativeDurationMs: 10_000 },
+      { aliases: ["unicornio galopando", "unicornio", "unicorn"], videoSrc: "./media/unicornio%20galopando01.webm?v=22", nativeDurationMs: 7_000 },
+    ];
 
     const settings = {
       blockSize: 15,
       likeGoal: 1_000,
       highPriorityMinDiamonds: 100,
-      highPriorityPauseMs: 10_000,
       alertDurationMs: 3_000,
       alertGapMs: 4_000,
+      priorityGifts,
     };
     const controller = new RoseQueueController(settings);
     const card = document.getElementById("alert");
@@ -128,6 +142,7 @@
     const giftFallback = document.getElementById("gift-fallback");
     const queuePanel = document.getElementById("queue-panel");
     const queueList = document.getElementById("queue-list");
+    const priorityVideo = document.getElementById("priority-video");
     const status = document.getElementById("status");
     const params = new URLSearchParams(window.location.search);
     const previewMode = params.get("preview") === "1";
@@ -138,6 +153,9 @@
     let lastQueueSignature = "";
     let socket = null;
     let reconnectTimer = null;
+    let playingPriorityToken = null;
+    const endingPriorityTokens = new Set();
+    const pendingPriorityEndRequests = new Map();
     const recentEvents = [];
 
     function setStatus(text) {
@@ -161,6 +179,7 @@
     }
 
     function unwrapStreamerBotMessage(message) {
+      const supported = (value) => value && ["gift", "like", "priorityEnd"].includes(value.event);
       if (message?.event && typeof message.event === "object") {
         const source = String(message.event.source ?? "").toLowerCase();
         const type = String(message.event.type ?? "").toLowerCase();
@@ -168,15 +187,15 @@
 
         let payload = message.data;
         if (typeof payload === "string") payload = JSON.parse(payload);
-        if (payload && (payload.event === "gift" || payload.event === "like")) return payload;
+        if (supported(payload)) return payload;
         payload = payload?.data ?? payload;
         if (typeof payload === "string") payload = JSON.parse(payload);
-        if (payload && (payload.event === "gift" || payload.event === "like")) return payload;
+        if (supported(payload)) return payload;
         if (payload?.args && typeof payload.args === "object" && !payload.event) payload = payload.args;
         if (typeof payload?.args === "string" && !payload.event) payload = JSON.parse(payload.args);
-        return payload && (payload.event === "gift" || payload.event === "like") ? payload : null;
+        return supported(payload) ? payload : null;
       }
-      return message?.event === "gift" || message?.event === "like" ? message : null;
+      return supported(message) ? message : null;
     }
 
     function describeEvent(envelope, result) {
@@ -186,12 +205,15 @@
         summary += ` → ${result.kind}`;
         if (result.reason) summary += ` (${result.reason})`;
         if (result.kind === "diamond-progress") summary += ` | +${result.contributedDiamonds} diamantes | saldo ${result.accumulatedDiamonds} | blocos +${result.blocksAdded}`;
-        if (result.kind === "high-priority") summary += ` | pausa prioritária`;
+        if (result.kind === "priority-queued") summary += ` | bloqueio ${result.tokenId}`;
+        if (result.kind === "unmapped-high-priority") summary += ` | alto valor sem animação mapeada`;
       }
       if (eventName === "like" && result.kind === "like-progress") summary += ` → +${result.added} curtidas | total ${result.total} | metas +${result.alertsAdded}`;
+      if (eventName === "priorityEnd" && result.kind === "priority-ended") summary += ` → liberado ${result.giftName}`;
       const snapshot = controller.snapshot();
       summary += ` | fila ${snapshot.pendingBlocks}`;
       if (snapshot.current) summary += ` | exibindo ${snapshot.current.senderName}`;
+      if (snapshot.paused) summary += ` | prioridade pendente ${snapshot.priorityPending + (snapshot.priorityActive ? 1 : 0)}`;
       if (debugMode) summary += `\nMensagem recebida: ${safeDiagnostic(envelope)}`;
       recentEvents.unshift(summary);
       recentEvents.length = Math.min(recentEvents.length, 2);
@@ -235,6 +257,7 @@
           id: "guardiao-rosa-overlay",
           events: { general: ["Custom"] },
         }));
+        flushPriorityEndRequests();
         setStatus("Streamer.bot conectado; inscrição em General.Custom enviada.");
       });
       socket.addEventListener("message", ({ data }) => {
@@ -242,6 +265,12 @@
           const message = JSON.parse(String(data));
           const envelope = unwrapStreamerBotMessage(message);
           if (!envelope) {
+            if (typeof message?.id === "string" && message.id.startsWith("gf-priority-end-") && message.status === "error") {
+              recentEvents.unshift("Streamer.bot não aceitou priorityEnd; o bloqueio permanece ativo.");
+              recentEvents.length = Math.min(recentEvents.length, 2);
+              setStatus("Streamer.bot conectado.");
+              return;
+            }
             if (debugMode && message?.status === "ok" && message?.id === "guardiao-rosa-overlay") {
               recentEvents.unshift("Streamer.bot confirmou a inscrição em General.Custom.");
               recentEvents.length = Math.min(recentEvents.length, 2);
@@ -254,7 +283,18 @@
             return;
           }
           const result = controller.handleEnvelope(envelope);
+          if (envelope.event === "priorityEnd" && result.kind === "priority-ended") {
+            pendingPriorityEndRequests.delete(String(envelope.data?.tokenId ?? ""));
+            endingPriorityTokens.delete(String(envelope.data?.tokenId ?? ""));
+            if (playingPriorityToken === String(envelope.data?.tokenId ?? "")) {
+              playingPriorityToken = null;
+              priorityVideo.classList.remove("visible");
+              priorityVideo.removeAttribute("src");
+              priorityVideo.load();
+            }
+          }
           describeEvent(envelope, result);
+          render();
         } catch {
           recentEvents.unshift(`Mensagem JSON inválida: ${String(data).slice(0, 1200)}`);
           recentEvents.length = Math.min(recentEvents.length, 5);
@@ -275,6 +315,65 @@
         connect();
       }, 3_000);
     }
+
+    function flushPriorityEndRequests() {
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      for (const [tokenId, request] of pendingPriorityEndRequests) {
+        try {
+          socket.send(request);
+        } catch {
+          setStatus("Não consegui enviar o retorno de fim ao Streamer.bot; vou tentar ao reconectar.");
+          return;
+        }
+      }
+    }
+
+    function requestPriorityEnd(tokenId, reason = "ended") {
+      const key = String(tokenId ?? "");
+      if (!key || endingPriorityTokens.has(key)) return;
+      endingPriorityTokens.add(key);
+      priorityVideo.classList.remove("visible");
+
+      if (testMode) {
+        const result = controller.handleEnvelope({ event: "priorityEnd", data: { tokenId: key, reason } });
+        describeEvent({ event: "priorityEnd", data: { tokenId: key, reason } }, result);
+        render();
+        return;
+      }
+
+      const requestId = `gf-priority-end-${key}`;
+      const request = JSON.stringify({
+        request: "DoAction",
+        id: requestId,
+        action: { name: PRIORITY_END_ACTION },
+        args: { tokenId: key, reason },
+      });
+      pendingPriorityEndRequests.set(key, request);
+      flushPriorityEndRequests();
+      recentEvents.unshift(`Vídeo terminou; aguardando confirmação priorityEnd (${key}).`);
+      recentEvents.length = Math.min(recentEvents.length, 2);
+      setStatus("Streamer.bot conectado.");
+    }
+
+    function renderPriorityVideo(job) {
+      if (!job || playingPriorityToken === job.tokenId) return;
+      playingPriorityToken = job.tokenId;
+      priorityVideo.src = job.videoSrc;
+      priorityVideo.classList.add("visible");
+      priorityVideo.load();
+      const playResult = priorityVideo.play();
+      if (playResult && typeof playResult.catch === "function") {
+        playResult.catch(() => requestPriorityEnd(job.tokenId, "playback-blocked"));
+      }
+      recentEvents.unshift(`Animação prioritária: ${job.giftName} — ${job.senderName}.`);
+      recentEvents.length = Math.min(recentEvents.length, 2);
+      setStatus("Streamer.bot conectado.");
+    }
+
+    priorityVideo.addEventListener("ended", () => requestPriorityEnd(playingPriorityToken, "ended"));
+    priorityVideo.addEventListener("error", () => {
+      if (playingPriorityToken) requestPriorityEnd(playingPriorityToken, "media-error");
+    });
 
     function renderQueue(nextAlerts) {
       const signature = JSON.stringify(nextAlerts.map((item) => [item.senderId, item.senderName, item.count, item.resumesAfterPriority]));
@@ -303,6 +402,7 @@
       const snapshot = controller.snapshot();
       const current = snapshot.current;
       renderQueue(snapshot.nextAlerts);
+      renderPriorityVideo(snapshot.priorityActive);
       if (!current) {
         card.classList.remove("visible");
         card.classList.remove("likes");
@@ -345,7 +445,7 @@
         simulateGift("joao-teste", "João (teste)", 15);
       });
       document.getElementById("test-likes").addEventListener("click", () => simulateLikes(1_000));
-      document.getElementById("test-priority").addEventListener("click", () => simulateGift("prioridade-teste", "Presente prioritário (teste)", 1, 100));
+      document.getElementById("test-priority").addEventListener("click", () => simulateGift("prioridade-teste", "Presente prioritário (teste)", 1, 30, "Capivara"));
       document.getElementById("test-reset").addEventListener("click", () => window.location.reload());
       setInterval(render, 100);
     } else if (previewMode) {
@@ -364,4 +464,3 @@
   </script>
 </body>
 </html>
-
