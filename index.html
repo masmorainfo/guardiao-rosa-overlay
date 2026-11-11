@@ -71,7 +71,7 @@
     .queue-number { color: #b7ff92; font-size: 11px; font-weight: 800; }
     .queue-name { overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
     .queue-count { color: #c7fbd0; font-size: 11px; white-space: nowrap; }
-    #status { display: none; position: fixed; z-index: 10; left: 8px; top: 8px; max-width: min(92vw, 520px); padding: 8px 10px; border-radius: 8px; color: #fff; background: rgba(15, 20, 18, .92); font: 12px/1.45 "Segoe UI", Arial, sans-serif; white-space: pre-line; }
+    #status { display: none; position: fixed; z-index: 10; left: 8px; top: 8px; max-width: min(92vw, 520px); max-height: 45vh; padding: 8px 10px; overflow: auto; border-radius: 8px; color: #fff; background: rgba(15, 20, 18, .92); font: 12px/1.45 "Segoe UI", Arial, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }
     #status.visible { display: block; }
     #test-tools { display: none; position: fixed; z-index: 11; left: 8px; bottom: 8px; width: min(94vw, 330px); padding: 10px; border: 1px solid #8fffb0; border-radius: 10px; color: #fff; background: rgba(15, 32, 23, .96); font: 13px/1.4 "Segoe UI", Arial, sans-serif; }
     #test-tools.visible { display: block; }
@@ -109,7 +109,7 @@
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=12";
+    import { RoseQueueController } from "./core.mjs?v=13";
 
     const settings = {
       blockSize: 15,
@@ -147,6 +147,20 @@
       status.classList.add("visible");
     }
 
+    function safeDiagnostic(envelope) {
+      const redact = (value) => {
+        if (Array.isArray(value)) return value.map(redact);
+        if (!value || typeof value !== "object") return value;
+        return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+          key,
+          /user.?id|unique.?id|display.?id|username|nickname|profile.?picture|avatar|comment|tikfinity.?user.?id/i.test(key)
+            ? "[oculto]"
+            : redact(child),
+        ]));
+      };
+      return JSON.stringify(redact(envelope)).slice(0, 1200);
+    }
+
     function describeEvent(envelope, result) {
       const eventName = String(envelope?.event ?? "desconhecido");
       let summary = `Evento: ${eventName}`;
@@ -160,8 +174,9 @@
       const snapshot = controller.snapshot();
       summary += ` | fila ${snapshot.pendingBlocks}`;
       if (snapshot.current) summary += ` | exibindo ${snapshot.current.senderName}`;
+      if (debugMode) summary += `\nMensagem recebida: ${safeDiagnostic(envelope)}`;
       recentEvents.unshift(summary);
-      recentEvents.length = Math.min(recentEvents.length, 5);
+      recentEvents.length = Math.min(recentEvents.length, 2);
       setStatus(testMode ? "Teste local ativo — sem presentes reais." : "Streamer.bot conectado.");
     }
 
@@ -203,7 +218,7 @@
           const result = controller.handleEnvelope(envelope);
           describeEvent(envelope, result);
         } catch {
-          recentEvents.unshift("Mensagem recebida inválida; aguardando próximo evento.");
+          recentEvents.unshift(`Mensagem JSON inválida: ${String(data).slice(0, 1200)}`);
           recentEvents.length = Math.min(recentEvents.length, 5);
           setStatus("Streamer.bot conectado.");
         }
