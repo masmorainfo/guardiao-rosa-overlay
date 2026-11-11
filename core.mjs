@@ -1,6 +1,5 @@
 export const DEFAULT_SETTINGS = Object.freeze({
   blockSize: 15,
-  lowDiamondValue: 1,
   likeGoal: 1_000,
   highPriorityMinDiamonds: 100,
   highPriorityPauseMs: 10_000,
@@ -181,7 +180,6 @@ export class RoseQueueController {
   constructor(settings = {}, clock = () => Date.now()) {
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
     this.settings.blockSize = asPositiveInteger(this.settings.blockSize, DEFAULT_SETTINGS.blockSize);
-    this.settings.lowDiamondValue = asPositiveInteger(this.settings.lowDiamondValue, DEFAULT_SETTINGS.lowDiamondValue);
     this.settings.likeGoal = asPositiveInteger(this.settings.likeGoal, DEFAULT_SETTINGS.likeGoal);
     this.settings.highPriorityMinDiamonds = asPositiveInteger(this.settings.highPriorityMinDiamonds, DEFAULT_SETTINGS.highPriorityMinDiamonds);
     this.settings.highPriorityPauseMs = asPositiveInteger(this.settings.highPriorityPauseMs, DEFAULT_SETTINGS.highPriorityPauseMs);
@@ -215,13 +213,9 @@ export class RoseQueueController {
       return this.lastResult;
     }
 
-    if (normalized.diamondValue !== this.settings.lowDiamondValue) {
-      this.lastResult = { kind: "ignored", reason: "not-low-value", giftName: normalized.giftName, diamondValue: normalized.diamondValue };
-      return this.lastResult;
-    }
-
+    const contributedDiamonds = normalized.diamondValue * normalized.repeatCount;
     const previousCarry = this.carryByDonor.get(normalized.senderId) ?? 0;
-    const total = previousCarry + normalized.repeatCount;
+    const total = previousCarry + contributedDiamonds;
     const blocks = Math.floor(total / this.settings.blockSize);
     const remainder = total % this.settings.blockSize;
     this.carryByDonor.set(normalized.senderId, remainder);
@@ -232,8 +226,8 @@ export class RoseQueueController {
           mode: "gift",
           senderName: normalized.senderName,
           count: this.settings.blockSize,
-          text: `${this.settings.blockSize} presentes de ${this.settings.lowDiamondValue} diamante`,
-          queueLabel: `${this.settings.blockSize} presentes`,
+          text: `${this.settings.blockSize} diamantes acumulados`,
+          queueLabel: `${this.settings.blockSize} diamantes`,
           giftName: normalized.giftName,
           giftIconUrl: normalized.giftIconUrl,
           fallbackEmoji: normalized.fallbackEmoji,
@@ -241,7 +235,13 @@ export class RoseQueueController {
       }
     }
 
-    this.lastResult = { kind: "low-value", senderId: normalized.senderId, accumulated: remainder, blocksAdded: blocks };
+    this.lastResult = {
+      kind: "diamond-progress",
+      senderId: normalized.senderId,
+      contributedDiamonds,
+      accumulatedDiamonds: remainder,
+      blocksAdded: blocks,
+    };
     this.advance(at);
     return this.lastResult;
   }
