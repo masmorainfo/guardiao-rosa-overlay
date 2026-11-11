@@ -109,7 +109,7 @@
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=14";
+    import { RoseQueueController } from "./core.mjs?v=15";
 
     const settings = {
       blockSize: 15,
@@ -241,6 +241,10 @@
           if (!envelope) {
             if (debugMode && message?.status === "ok" && message?.id === "guardiao-rosa-overlay") {
               recentEvents.unshift("Streamer.bot confirmou a inscrição em General.Custom.");
+              recentEvents.length = Math.min(recentEvents.length, 2);
+              setStatus("Streamer.bot conectado.");
+            } else if (debugMode && !(message?.request === "Hello")) {
+              recentEvents.unshift(`Mensagem WebSocket sem formato reconhecido: ${safeDiagnostic(message)}`);
               recentEvents.length = Math.min(recentEvents.length, 2);
               setStatus("Streamer.bot conectado.");
             }
