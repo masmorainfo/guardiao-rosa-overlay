@@ -109,7 +109,7 @@
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=13";
+    import { RoseQueueController } from "./core.mjs?v=14";
 
     const settings = {
       blockSize: 15,
@@ -159,6 +159,21 @@
         ]));
       };
       return JSON.stringify(redact(envelope)).slice(0, 1200);
+    }
+
+    function unwrapStreamerBotMessage(message) {
+      if (message?.event && typeof message.event === "object") {
+        const source = String(message.event.source ?? "").toLowerCase();
+        const type = String(message.event.type ?? "").toLowerCase();
+        if (source !== "general" || type !== "custom") return null;
+
+        let payload = message.data?.data ?? message.data;
+        if (typeof payload === "string") payload = JSON.parse(payload);
+        if (payload?.args && typeof payload.args === "object" && !payload.event) payload = payload.args;
+        if (typeof payload?.args === "string" && !payload.event) payload = JSON.parse(payload.args);
+        return payload && (payload.event === "gift" || payload.event === "like") ? payload : null;
+      }
+      return message?.event === "gift" || message?.event === "like" ? message : null;
     }
 
     function describeEvent(envelope, result) {
@@ -211,10 +226,26 @@
         scheduleReconnect();
         return;
       }
-      socket.addEventListener("open", () => setStatus("Streamer.bot conectado."));
+      socket.addEventListener("open", () => {
+        socket.send(JSON.stringify({
+          request: "Subscribe",
+          id: "guardiao-rosa-overlay",
+          events: { general: ["Custom"] },
+        }));
+        setStatus("Streamer.bot conectado; inscrição em General.Custom enviada.");
+      });
       socket.addEventListener("message", ({ data }) => {
         try {
-          const envelope = JSON.parse(String(data));
+          const message = JSON.parse(String(data));
+          const envelope = unwrapStreamerBotMessage(message);
+          if (!envelope) {
+            if (debugMode && message?.status === "ok" && message?.id === "guardiao-rosa-overlay") {
+              recentEvents.unshift("Streamer.bot confirmou a inscrição em General.Custom.");
+              recentEvents.length = Math.min(recentEvents.length, 2);
+              setStatus("Streamer.bot conectado.");
+            }
+            return;
+          }
           const result = controller.handleEnvelope(envelope);
           describeEvent(envelope, result);
         } catch {
