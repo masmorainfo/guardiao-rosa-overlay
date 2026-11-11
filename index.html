@@ -109,7 +109,7 @@
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=11";
+    import { RoseQueueController } from "./core.mjs?v=12";
 
     const settings = {
       blockSize: 15,
@@ -162,7 +162,7 @@
       if (snapshot.current) summary += ` | exibindo ${snapshot.current.senderName}`;
       recentEvents.unshift(summary);
       recentEvents.length = Math.min(recentEvents.length, 5);
-      setStatus(testMode ? "Teste local ativo — Event API não utilizada." : "TikFinity conectado.");
+      setStatus(testMode ? "Teste local ativo — sem presentes reais." : "Streamer.bot conectado.");
     }
 
     function simulateGift(senderId, senderName, repeatCount, diamondCount = 1, giftName = "Rosa") {
@@ -188,15 +188,15 @@
 
     function connect() {
       if (previewMode || testMode || socket?.readyState === WebSocket.CONNECTING || socket?.readyState === WebSocket.OPEN) return;
-      setStatus("Conectando ao TikFinity local…");
+      setStatus("Conectando ao Streamer.bot local…");
       try {
-        socket = new WebSocket("ws://127.0.0.1:21213/");
+        socket = new WebSocket("ws://127.0.0.1:8080/");
       } catch {
         setStatus("Não foi possível iniciar o WebSocket local.");
         scheduleReconnect();
         return;
       }
-      socket.addEventListener("open", () => setStatus("TikFinity conectado."));
+      socket.addEventListener("open", () => setStatus("Streamer.bot conectado."));
       socket.addEventListener("message", ({ data }) => {
         try {
           const envelope = JSON.parse(String(data));
@@ -205,10 +205,10 @@
         } catch {
           recentEvents.unshift("Mensagem recebida inválida; aguardando próximo evento.");
           recentEvents.length = Math.min(recentEvents.length, 5);
-          setStatus("TikFinity conectado.");
+          setStatus("Streamer.bot conectado.");
         }
       });
-      socket.addEventListener("error", () => setStatus("Falha no WebSocket. Verifique a permissão de rede local."));
+      socket.addEventListener("error", () => setStatus("Falha ao conectar. Verifique se o servidor WebSocket do Streamer.bot está iniciado."));
       socket.addEventListener("close", () => {
         setStatus("Desconectado; tentando reconectar…");
         scheduleReconnect();
