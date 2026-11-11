@@ -109,7 +109,7 @@
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=15";
+    import { RoseQueueController } from "./core.mjs?v=16";
 
     const settings = {
       blockSize: 15,
@@ -153,7 +153,7 @@
         if (!value || typeof value !== "object") return value;
         return Object.fromEntries(Object.entries(value).map(([key, child]) => [
           key,
-          /user.?id|unique.?id|display.?id|username|nickname|profile.?picture|avatar|comment|tikfinity.?user.?id/i.test(key)
+          /user.?id|unique.?id|display.?id|username|nickname|profile.?pictur|avatar|comment|tikfinity.?user.?id|action.?id|running.?action.?id/i.test(key)
             ? "[oculto]"
             : redact(child),
         ]));
@@ -167,8 +167,12 @@
         const type = String(message.event.type ?? "").toLowerCase();
         if (source !== "general" || type !== "custom") return null;
 
-        let payload = message.data?.data ?? message.data;
+        let payload = message.data;
         if (typeof payload === "string") payload = JSON.parse(payload);
+        if (payload && (payload.event === "gift" || payload.event === "like")) return payload;
+        payload = payload?.data ?? payload;
+        if (typeof payload === "string") payload = JSON.parse(payload);
+        if (payload && (payload.event === "gift" || payload.event === "like")) return payload;
         if (payload?.args && typeof payload.args === "object" && !payload.event) payload = payload.args;
         if (typeof payload?.args === "string" && !payload.event) payload = JSON.parse(payload.args);
         return payload && (payload.event === "gift" || payload.event === "like") ? payload : null;
