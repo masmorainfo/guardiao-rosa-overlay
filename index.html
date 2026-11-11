@@ -109,10 +109,10 @@
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=18";
+    import { RoseQueueController } from "./core.mjs?v=19";
 
     const settings = {
-      blockSize: 15,
+      blockSize: new URLSearchParams(window.location.search).get("debug") === "1" ? 1 : 15,
       lowDiamondValue: 1,
       likeGoal: 1_000,
       highPriorityMinDiamonds: 100,
