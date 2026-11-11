@@ -109,11 +109,10 @@
     <button id="test-reset">Reiniciar</button>
   </aside>
   <script type="module">
-    import { RoseQueueController } from "./core.mjs?v=20";
+    import { RoseQueueController } from "./core.mjs?v=21";
 
     const settings = {
       blockSize: 15,
-      lowDiamondValue: 1,
       likeGoal: 1_000,
       highPriorityMinDiamonds: 100,
       highPriorityPauseMs: 10_000,
@@ -186,7 +185,7 @@
       if (eventName === "gift") {
         summary += ` → ${result.kind}`;
         if (result.reason) summary += ` (${result.reason})`;
-        if (result.kind === "low-value") summary += ` | acumulado ${result.accumulated} | blocos +${result.blocksAdded}`;
+        if (result.kind === "diamond-progress") summary += ` | +${result.contributedDiamonds} diamantes | saldo ${result.accumulatedDiamonds} | blocos +${result.blocksAdded}`;
         if (result.kind === "high-priority") summary += ` | pausa prioritária`;
       }
       if (eventName === "like" && result.kind === "like-progress") summary += ` → +${result.added} curtidas | total ${result.total} | metas +${result.alertsAdded}`;
@@ -351,7 +350,7 @@
       setInterval(render, 100);
     } else if (previewMode) {
       name.textContent = "Prévia visual";
-      message.textContent = "15 presentes de 1 diamante";
+      message.textContent = "15 diamantes acumulados";
       card.classList.add("visible");
     } else {
       connect();
