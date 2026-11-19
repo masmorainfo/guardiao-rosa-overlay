@@ -117,7 +117,6 @@ export function normalizeGift(envelope) {
   ));
   const giftType = Number(firstDefined(gift.type, data.giftType, data.gift_type));
   const repeatEnd = firstDefined(data.repeatEnd, data.repeat_end);
-  const streakable = giftType === 1;
   const repeatCount = asPositiveInteger(firstDefined(data.repeatCount, data.repeat_count), 1);
   const senderId = String(firstDefined(
     user.uniqueId,
@@ -146,10 +145,6 @@ export function normalizeGift(envelope) {
   if (!Number.isFinite(diamondValue) || diamondValue <= 0) {
     return { kind: "ignored", reason: "missing-gift-value", giftId, giftName };
   }
-  if (streakable && !isFinalRepeat(repeatEnd)) {
-    return { kind: "ignored", reason: "streak-in-progress", giftId, giftName, senderId };
-  }
-
   return {
     kind: "gift",
     giftId: String(giftId),
@@ -157,6 +152,7 @@ export function normalizeGift(envelope) {
     diamondValue,
     giftType,
     repeatCount,
+    repeatEnd,
     giftIconUrl,
     fallbackEmoji: giftFallbackEmoji(giftName),
     senderId,
@@ -196,6 +192,7 @@ export class RoseQueueController {
     this.settings.priorityGifts = Array.isArray(this.settings.priorityGifts) ? this.settings.priorityGifts : [];
     this.clock = clock;
     this.carryByDonor = new Map();
+    this.lastGiftRepeats = new Map();
     this.lastLikeTotals = new Map();
     this.totalLikes = 0;
     this.pendingByDonor = new Map();
@@ -223,6 +220,10 @@ export class RoseQueueController {
     }
 
     const profile = this.findPriorityProfile(normalized);
+    if (profile && normalized.giftType === 1 && !isFinalRepeat(normalized.repeatEnd)) {
+      this.lastResult = { kind: "ignored", reason: "priority-streak-in-progress" };
+      return this.lastResult;
+    }
     if (profile) {
       const tokenId = globalThis.crypto?.randomUUID?.()
         ? `gf-${globalThis.crypto.randomUUID()}`
@@ -250,7 +251,22 @@ export class RoseQueueController {
       return this.lastResult;
     }
 
-    const contributedDiamonds = normalized.diamondValue * normalized.repeatCount;
+    // TikFinity reports a streak as cumulative counts (1, 2, ... 15).
+    // Only the increase since the previous update represents new gifts.
+    const repeatKey = `${normalized.senderId}\u0000${normalized.giftId}\u0000${normalized.giftName}`;
+    const previousRepeat = this.lastGiftRepeats.get(repeatKey);
+    let newGifts = normalized.repeatCount;
+    if (previousRepeat && at - previousRepeat.at < 120_000) {
+      if (normalized.repeatCount > 1 && normalized.repeatCount >= previousRepeat.count) {
+        newGifts = normalized.repeatCount - previousRepeat.count;
+      }
+    }
+    this.lastGiftRepeats.set(repeatKey, { count: normalized.repeatCount, at });
+    if (newGifts === 0) {
+      this.lastResult = { kind: "ignored", reason: "repeat-already-counted" };
+      return this.lastResult;
+    }
+    const contributedDiamonds = normalized.diamondValue * newGifts;
     const previousCarry = this.carryByDonor.get(normalized.senderId) ?? 0;
     const total = previousCarry + contributedDiamonds;
     const blocks = Math.floor(total / this.settings.blockSize);
@@ -441,3 +457,4 @@ export class RoseQueueController {
     };
   }
 }
+
